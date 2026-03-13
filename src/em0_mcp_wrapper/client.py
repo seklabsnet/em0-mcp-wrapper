@@ -1,5 +1,6 @@
 """HTTP client for the mem0 REST API. All error handling lives here."""
 
+import asyncio
 import logging
 
 import httpx
@@ -7,6 +8,9 @@ import httpx
 from . import config
 
 logger = logging.getLogger("em0-mcp")
+
+MAX_RETRIES = 2
+RETRY_DELAY = 5  # seconds between retries
 
 
 def _headers() -> dict:
@@ -17,22 +21,47 @@ def _headers() -> dict:
 
 
 async def request(method: str, path: str, **kwargs) -> dict:
-    """Send a request to mem0 API. Returns error dict on failure."""
+    """Send a request to mem0 API with retry on timeout (cold start tolerance)."""
     url = f"{config.MEM0_API_URL}{path}"
-    try:
-        async with httpx.AsyncClient(timeout=config.REQUEST_TIMEOUT) as client:
-            resp = await client.request(method, url, headers=_headers(), **kwargs)
-            resp.raise_for_status()
-            return resp.json()
-    except httpx.TimeoutException:
-        logger.error("Timeout: %s %s", method, url)
-        return {"error": "Request timed out", "url": url}
-    except httpx.HTTPStatusError as e:
-        logger.error("HTTP %d: %s %s", e.response.status_code, method, url)
-        return {"error": f"HTTP {e.response.status_code}", "detail": e.response.text}
-    except httpx.ConnectError:
-        logger.error("Connection error: %s", url)
-        return {"error": "Cannot connect to mem0 server", "url": url}
+    last_error = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            async with httpx.AsyncClient(timeout=config.REQUEST_TIMEOUT) as c:
+                resp = await c.request(method, url, headers=_headers(), **kwargs)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.TimeoutException:
+            last_error = "timeout"
+            if attempt < MAX_RETRIES:
+                logger.warning(
+                    "Timeout on attempt %d/%d (cold start?), retrying in %ds: %s %s",
+                    attempt, MAX_RETRIES, RETRY_DELAY, method, url,
+                )
+                await asyncio.sleep(RETRY_DELAY)
+            else:
+                logger.error("Timeout after %d attempts: %s %s", MAX_RETRIES, method, url)
+        except httpx.HTTPStatusError as e:
+            logger.error("HTTP %d: %s %s", e.response.status_code, method, url)
+            return {"error": f"HTTP {e.response.status_code}", "detail": e.response.text}
+        except httpx.ConnectError:
+            last_error = "connect"
+            if attempt < MAX_RETRIES:
+                logger.warning(
+                    "Connection failed attempt %d/%d, retrying in %ds: %s",
+                    attempt, MAX_RETRIES, RETRY_DELAY, url,
+                )
+                await asyncio.sleep(RETRY_DELAY)
+            else:
+                logger.error("Cannot connect after %d attempts: %s", MAX_RETRIES, url)
+
+    if last_error == "timeout":
+        return {
+            "error": "Request timed out after retries",
+            "hint": "Server may be cold-starting (scale-to-zero). Wait ~60s and try again.",
+            "url": url,
+        }
+    return {"error": "Cannot connect to mem0 server", "url": url}
 
 
 async def add_memory(content: str, user_id: str, metadata: dict) -> dict:

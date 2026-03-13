@@ -6,7 +6,7 @@ import sys
 MEM0_API_URL: str = os.environ.get("MEM0_API_URL", "").rstrip("/")
 MEM0_API_KEY: str = os.environ.get("MEM0_API_KEY", "")
 DEFAULT_USER_ID: str = os.environ.get("MEM0_USER_ID", "centauri")
-REQUEST_TIMEOUT: int = int(os.environ.get("MEM0_TIMEOUT", "30"))
+REQUEST_TIMEOUT: int = int(os.environ.get("MEM0_TIMEOUT", "90"))
 
 
 def validate() -> None:

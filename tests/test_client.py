@@ -12,6 +12,10 @@ config.MEM0_API_URL = "https://test-mem0.example.com"
 config.MEM0_API_KEY = "test-key"
 config.REQUEST_TIMEOUT = 5
 
+# Speed up retry tests
+client.MAX_RETRIES = 2
+client.RETRY_DELAY = 0
+
 
 @respx.mock
 @pytest.mark.asyncio
@@ -57,18 +61,32 @@ async def test_delete_memory():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_timeout_error():
+async def test_timeout_retries_then_fails():
     respx.post("https://test-mem0.example.com/v1/memories/search/").mock(
         side_effect=httpx.TimeoutException("timeout")
     )
     result = await client.search_memory("test", "user1")
     assert "error" in result
     assert "timed out" in result["error"]
+    assert "hint" in result
 
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_connect_error():
+async def test_timeout_retry_succeeds():
+    route = respx.post("https://test-mem0.example.com/v1/memories/search/")
+    route.side_effect = [
+        httpx.TimeoutException("cold start"),
+        httpx.Response(200, json={"results": [{"memory": "found", "score": 0.8}]}),
+    ]
+    result = await client.search_memory("test", "user1")
+    assert "results" in result
+    assert result["results"][0]["score"] == 0.8
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_connect_error_retries():
     respx.post("https://test-mem0.example.com/v1/memories/search/").mock(
         side_effect=httpx.ConnectError("refused")
     )
