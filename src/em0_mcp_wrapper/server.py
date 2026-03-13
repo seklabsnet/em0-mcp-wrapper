@@ -67,6 +67,9 @@ async def add_memory(
         user_id=uid,
         metadata={"domain": domain, "type": memory_type},
     )
+    # Interpret empty results — mem0 returns [] when content is deduplicated
+    if "results" in result and len(result["results"]) == 0:
+        result["message"] = "Already known — mem0 deduplicated this (similar memory exists)."
     return _dump(result)
 
 
@@ -93,6 +96,22 @@ async def search_memory(
     uid = user_id or config.DEFAULT_USER_ID
     logger.info("search_memory: query='%s' user=%s", query, uid)
     result = await client.search_memory(query=query, user_id=uid, limit=limit)
+    # Format results for readability
+    if "results" in result:
+        items = result["results"]
+        if not items:
+            return _dump({"result": f"No memories found for '{query}'."})
+        lines = [f"Found {len(items)} memory(ies) for '{query}':\n"]
+        for i, m in enumerate(items, 1):
+            meta = m.get("metadata", {})
+            domain_tag = meta.get("domain", "?")
+            type_tag = meta.get("type", "?")
+            source = meta.get("source", "?")
+            lines.append(
+                f"{i}. [{domain_tag}/{type_tag}] {m.get('memory', '')}\n"
+                f"   score={m.get('score', '?'):.2f} | source={source} | id={m.get('id', '?')}"
+            )
+        return "\n".join(lines)
     return _dump(result)
 
 
