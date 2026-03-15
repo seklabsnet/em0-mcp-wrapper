@@ -21,23 +21,35 @@ pip install git+https://github.com/seklabsnet/em0-mcp-wrapper.git
 
 # Setup (registers MCP server with Claude Code)
 em0-setup
-
-# For a different project
-em0-setup --user-id my-other-project
 ```
 
-That's it. Restart Claude Code and the tools are available.
+That's it. Restart Claude Code and the tools are available in **all your projects**.
+
+## Multi-Project Support
+
+Project ID is **auto-detected** from your git repo name — no config needed:
+
+```
+~/centauri/       → user_id: "centauri"
+~/my-saas-app/    → user_id: "my-saas-app"
+~/freelance/acme/ → user_id: "acme"
+```
+
+Each project gets its own isolated memory space. Same server, same DB — separated by project ID.
+
+**Priority order:**
+1. `MEM0_USER_ID` env var (if set, always wins)
+2. Git remote repo name (parsed from `origin` URL)
+3. Current directory name (fallback)
 
 ## Setup Options
 
 ```bash
 em0-setup                              # interactive (prompts for API key)
 em0-setup --api-key sk-xxx             # pass key directly
-em0-setup --user-id my-project         # set project scope
+em0-setup --user-id custom-id          # override auto-detection
 em0-setup --api-url https://custom.url # custom server URL
 ```
-
-The setup registers the MCP server at **user scope** — works in all your projects, not just one.
 
 ## Manual Registration
 
@@ -47,7 +59,6 @@ If you prefer to register manually instead of using `em0-setup`:
 claude mcp add --scope user --transport stdio em0 \
   --env MEM0_API_URL=https://your-mem0-server.example.com \
   --env MEM0_API_KEY=$MEM0_API_KEY \
-  --env MEM0_USER_ID=your-team \
   -- em0-mcp
 ```
 
@@ -57,7 +68,7 @@ claude mcp add --scope user --transport stdio em0 \
 |----------|----------|---------|-------------|
 | `MEM0_API_URL` | Yes | — | mem0 server URL |
 | `MEM0_API_KEY` | Yes | — | API key for authentication |
-| `MEM0_USER_ID` | No | `centauri` | Default user/project scope |
+| `MEM0_USER_ID` | No | auto-detect | Override project ID (git repo name → dir name) |
 | `MEM0_TIMEOUT` | No | `90` | Request timeout (seconds) |
 
 ## Development
