@@ -15,10 +15,6 @@ import sys
 MEM0_DEFAULT_URL = "https://mem0-server.happygrass-15b6b68c.westeurope.azurecontainerapps.io"
 
 
-def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, check=check)
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Setup mem0 MCP server for Claude Code",
@@ -66,33 +62,19 @@ def main():
 
     # 3. Register MCP server with Claude Code (user scope = works in all projects)
     print("[1/2] Registering MCP server...")
-    result = run(
-        [
-            "claude", "mcp", "add",
-            "--scope", "user",
-            "--transport", "stdio",
-            "--env", f"MEM0_API_URL={args.api_url}",
-            "--env", f"MEM0_API_KEY={api_key}",
-            "--env", f"MEM0_USER_ID={args.user_id}",
-            "em0", "--", "em0-mcp",
-        ],
-        check=False,
+    # Must use shell=True because claude mcp add uses -- as separator
+    add_cmd = (
+        f'claude mcp add -s user -t stdio '
+        f'-e MEM0_API_URL="{args.api_url}" '
+        f'-e MEM0_API_KEY="{api_key}" '
+        f'-e MEM0_USER_ID="{args.user_id}" '
+        f'em0 -- em0-mcp'
     )
+    result = subprocess.run(add_cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
         # Might already exist — try remove + re-add
-        run(["claude", "mcp", "remove", "em0"], check=False)
-        result = run(
-            [
-                "claude", "mcp", "add",
-                "--scope", "user",
-                "--transport", "stdio",
-                "--env", f"MEM0_API_URL={args.api_url}",
-                "--env", f"MEM0_API_KEY={api_key}",
-                "--env", f"MEM0_USER_ID={args.user_id}",
-                "em0", "--", "em0-mcp",
-            ],
-            check=False,
-        )
+        subprocess.run("claude mcp remove em0", shell=True, capture_output=True)
+        result = subprocess.run(add_cmd, shell=True, capture_output=True, text=True)
         if result.returncode != 0:
             print(f"Error registering MCP: {result.stderr}")
             sys.exit(1)
