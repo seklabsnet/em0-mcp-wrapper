@@ -2,17 +2,33 @@
 
 MCP server that bridges [Claude Code](https://claude.ai/claude-code) to a self-hosted [mem0](https://github.com/mem0ai/mem0) instance.
 
+Built on [FastMCP 3.x](https://github.com/jlowin/fastmcp).
+
 ## What it does
 
-Provides 5 MCP tools to Claude Code:
+Provides 12 MCP tools to Claude Code:
+
+**Memory Tools:**
 
 | Tool | Purpose |
 |------|---------|
-| `add_memory` | Store knowledge (decisions, trade-offs, lessons) |
-| `search_memory` | Semantic search across stored knowledge |
+| `add_memory` | Store knowledge with metadata, immutable flag, and source tracking |
+| `search_memory` | Semantic search with optional domain/type filters |
+| `get_memory` | Get a single memory by ID with full details |
+| `update_memory` | Update an existing memory's content |
 | `list_memories` | List all memories for a user/project |
 | `delete_memory` | Delete a specific memory by ID |
+| `memory_history` | View edit history of a memory |
 | `memory_stats` | Cross-project stats (total projects, memories per project) |
+
+**Graph Memory Tools** (requires Neo4j on mem0 server):
+
+| Tool | Purpose |
+|------|---------|
+| `get_entities` | List all entities (nodes) in the knowledge graph |
+| `get_relations` | List all relationships between entities |
+| `search_graph` | Search via relationship traversal ("what depends on X?") |
+| `delete_entity` | Delete an entity and all its relations |
 
 ## Quick Start
 
@@ -62,6 +78,49 @@ Each project gets its own isolated memory space. Same server, same DB — separa
 2. Git remote repo name (parsed from `origin` URL)
 3. Current directory name (fallback)
 
+## Features
+
+### Immutable Memories
+Mark critical decisions as immutable so they can't be updated or merged:
+```
+add_memory("We chose PostgreSQL for ACID compliance", immutable=True)
+```
+
+### Metadata Filters
+Search with domain and type filters:
+```
+search_memory("database choice", filter_domain="backend", filter_type="decision")
+```
+
+### Memory History
+Track how decisions evolved over time:
+```
+memory_history("memory-uuid-here")
+```
+
+### Graph Memory (Knowledge Graph)
+When Neo4j is configured on the mem0 server, memories automatically build a knowledge graph:
+```
+add_memory("Erkut decided to use PostgreSQL for ACID compliance")
+→ Creates: Erkut ──decided──→ PostgreSQL ──reason──→ ACID Compliance
+```
+
+Search with relationship traversal:
+```
+search_graph("what depends on PostgreSQL?")
+→ Auth Service ──uses──→ PostgreSQL
+  Payment Service ──uses──→ PostgreSQL
+```
+
+List all entities and relations:
+```
+get_entities()   → [PostgreSQL, Erkut, Auth Service, ...]
+get_relations()  → [Erkut ──decided──→ PostgreSQL, ...]
+```
+
+### Input Validation
+Content is validated for length (max 50K chars) and emptiness before sending to the server.
+
 ## Where to find your API key
 
 `em0-setup` will ask for `MEM0_API_KEY` on first run. Here's where to find it:
@@ -100,6 +159,7 @@ claude mcp add --scope user --transport stdio em0 \
 | `MEM0_API_KEY` | Yes | — | API key for authentication |
 | `MEM0_USER_ID` | No | auto-detect | Override project ID (git repo name → dir name) |
 | `MEM0_TIMEOUT` | No | `90` | Request timeout (seconds) |
+| `MEM0_MAX_LENGTH` | No | `50000` | Max memory content length (chars) |
 
 ## Development
 

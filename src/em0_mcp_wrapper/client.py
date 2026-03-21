@@ -64,17 +64,49 @@ async def request(method: str, path: str, **kwargs) -> dict:
     return {"error": "Cannot connect to mem0 server", "url": url}
 
 
-async def add_memory(content: str, user_id: str, metadata: dict) -> dict:
-    payload = {
+# ─── Memory CRUD ───
+
+
+async def add_memory(
+    content: str,
+    user_id: str,
+    metadata: dict,
+    immutable: bool = False,
+    includes: str = "",
+    excludes: str = "",
+) -> dict:
+    payload: dict = {
         "messages": [{"role": "user", "content": content}],
         "user_id": user_id,
         "metadata": {k: v for k, v in metadata.items() if v},
     }
+    if immutable:
+        payload["immutable"] = True
+    if includes:
+        payload["includes"] = includes
+    if excludes:
+        payload["excludes"] = excludes
     return await request("POST", "/v1/memories/", json=payload)
 
 
-async def search_memory(query: str, user_id: str, limit: int = 5) -> dict:
-    payload = {"query": query, "user_id": user_id, "limit": limit}
+async def get_memory(memory_id: str) -> dict:
+    return await request("GET", f"/v1/memories/{memory_id}/")
+
+
+async def update_memory(memory_id: str, content: str) -> dict:
+    payload = {"data": content}
+    return await request("PUT", f"/v1/memories/{memory_id}/", json=payload)
+
+
+async def search_memory(
+    query: str,
+    user_id: str,
+    limit: int = 5,
+    filters: dict | None = None,
+) -> dict:
+    payload: dict = {"query": query, "user_id": user_id, "limit": limit}
+    if filters:
+        payload["filters"] = filters
     return await request("POST", "/v1/memories/search/", json=payload)
 
 
@@ -86,5 +118,41 @@ async def delete_memory(memory_id: str) -> dict:
     return await request("DELETE", f"/v1/memories/{memory_id}/")
 
 
+async def memory_history(memory_id: str) -> dict:
+    return await request("GET", f"/v1/memories/{memory_id}/history/")
+
+
 async def get_stats() -> dict:
     return await request("GET", "/stats")
+
+
+# ─── Graph Memory ───
+
+
+async def get_entities(user_id: str) -> dict:
+    """Get all entities (nodes) from the knowledge graph."""
+    return await request("GET", "/v1/entities/", params={"user_id": user_id})
+
+
+async def get_relations(user_id: str) -> dict:
+    """Get all relationships between entities in the knowledge graph."""
+    return await request("GET", "/v1/relations/", params={"user_id": user_id})
+
+
+async def search_graph(query: str, user_id: str, limit: int = 5) -> dict:
+    """Search using the knowledge graph (entity-relationship traversal)."""
+    payload = {
+        "query": query,
+        "user_id": user_id,
+        "limit": limit,
+        "api_version": "v2",
+    }
+    return await request("POST", "/v1/memories/search/", json=payload)
+
+
+async def delete_entity(user_id: str, entity_name: str) -> dict:
+    """Delete a specific entity and its relations from the knowledge graph."""
+    return await request(
+        "DELETE", f"/v1/entities/{entity_name}/",
+        params={"user_id": user_id},
+    )

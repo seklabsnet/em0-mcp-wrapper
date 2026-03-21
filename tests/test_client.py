@@ -1,11 +1,12 @@
 """Tests for the mem0 API client (mocked HTTP)."""
 
+import json
+
+import httpx
 import pytest
 import respx
-import httpx
 
-from em0_mcp_wrapper import config
-from em0_mcp_wrapper import client
+from em0_mcp_wrapper import client, config
 
 # Set config for tests
 config.MEM0_API_URL = "https://test-mem0.example.com"
@@ -30,13 +31,41 @@ async def test_add_memory():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_add_memory_immutable():
+    route = respx.post("https://test-mem0.example.com/v1/memories/")
+    route.mock(
+        return_value=httpx.Response(200, json={"results": [{"id": "imm1", "event": "ADD"}]})
+    )
+    result = await client.add_memory(
+        "critical decision", "user1", {"domain": "arch"}, immutable=True
+    )
+    assert "results" in result
+    body = json.loads(route.calls[0].request.content)
+    assert body["immutable"] is True
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_search_memory():
     respx.post("https://test-mem0.example.com/v1/memories/search/").mock(
-        return_value=httpx.Response(200, json={"results": [{"memory": "found it", "score": 0.9}]})
+        return_value=httpx.Response(
+            200, json={"results": [{"memory": "found it", "score": 0.9}]}
+        )
     )
     result = await client.search_memory("test query", "user1", limit=5)
     assert "results" in result
     assert result["results"][0]["score"] == 0.9
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_search_memory_with_filters():
+    route = respx.post("https://test-mem0.example.com/v1/memories/search/")
+    route.mock(return_value=httpx.Response(200, json={"results": []}))
+    filters = {"metadata.domain": "auth"}
+    await client.search_memory("test", "user1", filters=filters)
+    body = json.loads(route.calls[0].request.content)
+    assert body["filters"] == filters
 
 
 @respx.mock
@@ -51,11 +80,115 @@ async def test_list_memories():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_get_memory():
+    respx.get("https://test-mem0.example.com/v1/memories/abc123/").mock(
+        return_value=httpx.Response(200, json={"id": "abc123", "memory": "test data"})
+    )
+    result = await client.get_memory("abc123")
+    assert result["id"] == "abc123"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_update_memory():
+    respx.put("https://test-mem0.example.com/v1/memories/abc123/").mock(
+        return_value=httpx.Response(200, json={"id": "abc123", "event": "UPDATE"})
+    )
+    result = await client.update_memory("abc123", "updated content")
+    assert result["event"] == "UPDATE"
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_delete_memory():
     respx.delete("https://test-mem0.example.com/v1/memories/abc123/").mock(
         return_value=httpx.Response(200, json={"status": "deleted"})
     )
     result = await client.delete_memory("abc123")
+    assert result["status"] == "deleted"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_memory_history():
+    respx.get("https://test-mem0.example.com/v1/memories/abc123/history/").mock(
+        return_value=httpx.Response(200, json=[
+            {
+                "old_memory": "v1",
+                "new_memory": "v2",
+                "event": "UPDATE",
+                "created_at": "2026-03-01",
+            }
+        ])
+    )
+    result = await client.memory_history("abc123")
+    assert isinstance(result, list)
+    assert result[0]["event"] == "UPDATE"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_entities():
+    respx.get("https://test-mem0.example.com/v1/entities/").mock(
+        return_value=httpx.Response(200, json={
+            "results": [
+                {"name": "PostgreSQL", "type": "database"},
+                {"name": "Erkut", "type": "person"},
+            ]
+        })
+    )
+    result = await client.get_entities("user1")
+    assert len(result["results"]) == 2
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_relations():
+    respx.get("https://test-mem0.example.com/v1/relations/").mock(
+        return_value=httpx.Response(200, json={
+            "results": [
+                {
+                    "source": "Erkut",
+                    "relationship": "decided",
+                    "target": "PostgreSQL",
+                }
+            ]
+        })
+    )
+    result = await client.get_relations("user1")
+    assert len(result["results"]) == 1
+    assert result["results"][0]["relationship"] == "decided"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_search_graph():
+    route = respx.post("https://test-mem0.example.com/v1/memories/search/")
+    route.mock(return_value=httpx.Response(200, json={
+        "results": [{"memory": "chose PostgreSQL", "score": 0.9}],
+        "relations": [
+            {
+                "source": "Erkut",
+                "relationship": "decided",
+                "target": "PostgreSQL",
+                "score": 0.85,
+            }
+        ],
+    }))
+    result = await client.search_graph("database decisions", "user1")
+    assert "relations" in result
+    assert len(result["relations"]) == 1
+    body = json.loads(route.calls[0].request.content)
+    assert body["api_version"] == "v2"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_delete_entity():
+    respx.delete("https://test-mem0.example.com/v1/entities/PostgreSQL/").mock(
+        return_value=httpx.Response(200, json={"status": "deleted"})
+    )
+    result = await client.delete_entity("user1", "PostgreSQL")
     assert result["status"] == "deleted"
 
 

@@ -9,7 +9,7 @@ config.MEM0_API_KEY = "test-key"
 
 def test_version():
     from em0_mcp_wrapper import __version__
-    assert __version__ == "0.1.0"
+    assert __version__ == "0.4.0"
 
 
 def test_config_validate_passes():
@@ -18,3 +18,8 @@ def test_config_validate_passes():
     config.MEM0_API_KEY = "key"
     # Should not raise
     config.validate()
+
+
+def test_max_memory_length_default():
+    """MAX_MEMORY_LENGTH should have a sensible default."""
+    assert config.MAX_MEMORY_LENGTH > 0

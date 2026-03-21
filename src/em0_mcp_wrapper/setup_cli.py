@@ -73,7 +73,7 @@ def main():
     )
     args = parser.parse_args()
 
-    print("=== em0 MCP Setup ===\n")
+    print("=== em0 MCP Setup (v0.4.0) ===\n")
 
     # 1. Get API key
     api_key = args.api_key
@@ -118,8 +118,10 @@ def main():
     except Exception:
         print("  Warning: Could not reach server (may be cold-starting)")
 
-    print(f"\nDone! Restart Claude Code to use mem0.")
-    print(f"Tools: add_memory, search_memory, list_memories, delete_memory")
+    print("\nDone! Restart Claude Code to use em0.")
+    print("Tools: add_memory, search_memory, list_memories, get_memory,")
+    print("       update_memory, delete_memory, memory_history, memory_stats,")
+    print("       get_entities, get_relations, search_graph, delete_entity")
 
 
 if __name__ == "__main__":
