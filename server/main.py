@@ -116,6 +116,22 @@ memory = None
 graph_enabled = False
 
 
+def _patch_embedding_dims(mem_instance, dims: int):
+    """Patch Azure OpenAI embedder to use specific dimensions."""
+    original_embed = mem_instance.embedding_model.embed
+
+    def patched_embed(text, memory_action=None):
+        text = text.replace("\n", " ")
+        return mem_instance.embedding_model.client.embeddings.create(
+            input=[text],
+            model=mem_instance.embedding_model.config.model,
+            dimensions=dims,
+        ).data[0].embedding
+
+    mem_instance.embedding_model.embed = patched_embed
+    logger.info("Patched embedder to use dimensions=%d", dims)
+
+
 def _get_memory():
     global memory, graph_enabled
     if memory is None:
@@ -123,6 +139,7 @@ def _get_memory():
         config = _build_config()
         try:
             memory = Memory.from_config(config)
+            _patch_embedding_dims(memory, 1024)
             graph_enabled = bool(NEO4J_URI)
             logger.info("Memory initialized (graph=%s)", graph_enabled)
         except Exception as e:
@@ -131,6 +148,7 @@ def _get_memory():
                 logger.warning("Neo4j connection failed: %s — retrying without graph", e)
                 config.pop("graph_store", None)
                 memory = Memory.from_config(config)
+                _patch_embedding_dims(memory, 1024)
                 graph_enabled = False
                 logger.info("Memory initialized WITHOUT graph (Neo4j unreachable)")
             else:
