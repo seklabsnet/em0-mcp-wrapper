@@ -63,11 +63,13 @@ def _build_config() -> dict:
             "provider": "azure_openai",
             "config": {
                 "model": "text-embedding-3-small",
+                "embedding_dims": 1024,
                 "azure_kwargs": {
                     "api_key": AZURE_OPENAI_KEY,
                     "azure_endpoint": AZURE_OPENAI_ENDPOINT,
                     "azure_deployment": "text-embedding-3-small",
                     "api_version": "2024-02-01",
+                    "dimensions": 1024,
                 },
             },
         },
