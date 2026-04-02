@@ -304,6 +304,14 @@ async def memory_stats() -> str:
         lines.append("Per project:")
         for name, count in projects.items():
             lines.append(f"  {name}: {count} memories")
+    graph = result.get("graph", {})
+    if graph:
+        lines.append(f"\nKnowledge Graph:")
+        lines.append(f"  Nodes: {graph.get('nodes', 0)}")
+        lines.append(f"  Edges: {graph.get('edges', 0)}")
+    debug = result.get("_debug_tables", [])
+    if debug:
+        lines.append(f"\nDB tables: {', '.join(debug)}")
     return "\n".join(lines)
 
 

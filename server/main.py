@@ -333,6 +333,7 @@ def stats(authorization: str = Header("")):
             dbname=POSTGRES_DB,
             user=POSTGRES_USER,
             password=POSTGRES_PASSWORD,
+            sslmode="require",
         )
         cur = conn.cursor()
 
