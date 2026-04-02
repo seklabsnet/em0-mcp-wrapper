@@ -327,82 +327,23 @@ def stats(authorization: str = Header("")):
     try:
         m = _get_memory()
 
-        # Get DB connection from mem0's vector store internals
+        # Simple approach: scan known project IDs via mem0 API
+        known_ids = [
+            "centauri", "centauri-ios", "centauri-backend",
+            "happybrain", "em0-mcp-wrapper", "happy-brain",
+            "pallasite", "seklabs", "default",
+        ]
+
         projects: dict[str, int] = {}
-        errors: list[str] = []
-        db_method = "unknown"
-
-        try:
-            # mem0 pgvector uses psycopg2 internally — get the connection
-            vs = m.vector_store
-            collection_name = getattr(vs, 'collection_name', 'mem0_v3')
-
-            import psycopg2
-            conn = psycopg2.connect(
-                host=POSTGRES_HOST,
-                port=int(POSTGRES_PORT),
-                dbname=POSTGRES_DB,
-                user=POSTGRES_USER,
-                password=POSTGRES_PASSWORD,
-                sslmode="require",
-            )
-            cur = conn.cursor()
-
-            # List ALL tables to find the right one
-            cur.execute("""
-                SELECT schemaname, tablename FROM pg_tables
-                WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-                ORDER BY schemaname, tablename
-            """)
-            all_tables = [(r[0], r[1]) for r in cur.fetchall()]
-            errors.append(f"_tables: {[f'{s}.{t}' for s, t in all_tables]}")
-
-            # Try each table for user_id
-            for schema, table in all_tables:
-                # Check columns
-                cur.execute(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_schema = %s AND table_name = %s",
-                    (schema, table),
-                )
-                columns = [r[0] for r in cur.fetchall()]
-
-                if "user_id" in columns:
-                    try:
-                        cur.execute(
-                            f'SELECT user_id, COUNT(*) FROM "{schema}"."{table}" '
-                            f"WHERE user_id IS NOT NULL "
-                            f"GROUP BY user_id ORDER BY COUNT(*) DESC"
-                        )
-                        for uid, count in cur.fetchall():
-                            if uid:
-                                projects[uid] = projects.get(uid, 0) + count
-                        db_method = f"user_id column in {schema}.{table}"
-                    except Exception as qe:
-                        conn.rollback()
-                        errors.append(f"query {schema}.{table}: {qe}")
-
-            cur.close()
-            conn.close()
-        except Exception as db_err:
-            errors.append(f"DB: {type(db_err).__name__}: {db_err}")
-
-        # Fallback: if SQL found nothing, scan known projects via mem0 API
-        if not projects:
-            db_method = "mem0 get_all fallback"
-            for uid in [
-                "centauri", "centauri-ios", "centauri-backend",
-                "happybrain", "em0-mcp-wrapper", "happy-brain",
-                "pallasite", "seklabs", "default",
-            ]:
-                try:
-                    result = m.get_all(user_id=uid)
-                    items = result.get("results", []) if isinstance(result, dict) else result
-                    count = len(items) if isinstance(items, list) else 0
-                    if count > 0:
-                        projects[uid] = count
-                except Exception:
-                    pass
+        for uid in known_ids:
+            try:
+                result = m.get_all(user_id=uid)
+                items = result.get("results", []) if isinstance(result, dict) else result
+                count = len(items) if isinstance(items, list) else 0
+                if count > 0:
+                    projects[uid] = count
+            except Exception:
+                pass
 
         # Graph stats (if Neo4j enabled)
         graph_stats = {}
@@ -433,19 +374,10 @@ def stats(authorization: str = Header("")):
             "total_memories": sum(projects.values()),
             "projects": projects,
             "graph": graph_stats,
-            "_method": db_method,
-            "_errors": errors if errors else None,
         }
     except Exception as e:
         logger.error("stats error: %s", e, exc_info=True)
-        return {
-            "version": "5.0.0",
-            "error": str(e),
-            "error_type": type(e).__name__,
-            "db_host": POSTGRES_HOST,
-            "db_name": POSTGRES_DB,
-            "db_user": POSTGRES_USER,
-        }
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─── Conflict Detection ───

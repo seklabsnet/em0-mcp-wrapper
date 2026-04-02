@@ -309,14 +309,6 @@ async def memory_stats() -> str:
         lines.append(f"\nKnowledge Graph:")
         lines.append(f"  Nodes: {graph.get('nodes', 0)}")
         lines.append(f"  Edges: {graph.get('edges', 0)}")
-    method = result.get("_method")
-    if method:
-        lines.append(f"\nMethod: {method}")
-    errors = result.get("_errors")
-    if errors:
-        lines.append(f"\nDebug ({len(errors)}):")
-        for e in errors[:5]:
-            lines.append(f"  {e}")
     return "\n".join(lines)
 
 
