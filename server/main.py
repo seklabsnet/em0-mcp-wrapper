@@ -335,13 +335,42 @@ def stats(authorization: str = Header("")):
             password=POSTGRES_PASSWORD,
         )
         cur = conn.cursor()
-        # mem0 stores in 'memories' table within the collection
-        # Try common table names
+        # Find mem0's table name dynamically
         cur.execute("""
-            SELECT user_id, COUNT(*) FROM memories
-            GROUP BY user_id ORDER BY COUNT(*) DESC
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public'
+            AND table_name LIKE '%memor%'
+            ORDER BY table_name
         """)
-        rows = cur.fetchall()
+        tables = [row[0] for row in cur.fetchall()]
+
+        rows = []
+        for table in tables:
+            try:
+                cur.execute(f"""
+                    SELECT user_id, COUNT(*) FROM "{table}"
+                    WHERE user_id IS NOT NULL
+                    GROUP BY user_id ORDER BY COUNT(*) DESC
+                """)
+                rows.extend(cur.fetchall())
+            except Exception:
+                conn.rollback()
+
+        # If no memory tables found, try common names
+        if not rows and not tables:
+            for tname in ["memories", "mem0_v3", "vectors"]:
+                try:
+                    cur.execute(f"""
+                        SELECT user_id, COUNT(*) FROM "{tname}"
+                        WHERE user_id IS NOT NULL
+                        GROUP BY user_id ORDER BY COUNT(*) DESC
+                    """)
+                    rows = cur.fetchall()
+                    if rows:
+                        break
+                except Exception:
+                    conn.rollback()
+
         cur.close()
         conn.close()
 
