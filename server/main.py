@@ -387,7 +387,8 @@ def stats(authorization: str = Header("")):
         except Exception as db_err:
             errors.append(f"DB: {type(db_err).__name__}: {db_err}")
 
-            # Fallback: scan known projects via mem0 API
+        # Fallback: if SQL found nothing, scan known projects via mem0 API
+        if not projects:
             db_method = "mem0 get_all fallback"
             for uid in [
                 "centauri", "centauri-ios", "centauri-backend",
