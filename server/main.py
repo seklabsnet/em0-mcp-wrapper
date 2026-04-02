@@ -325,66 +325,65 @@ def health():
 def stats(authorization: str = Header("")):
     _check_auth(authorization)
     try:
-        # Query pgvector directly for distinct user_ids and counts
-        import psycopg2
-        conn = psycopg2.connect(
-            host=POSTGRES_HOST,
-            port=int(POSTGRES_PORT),
-            dbname=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD,
-            sslmode="require",
-        )
-        cur = conn.cursor()
+        m = _get_memory()
 
-        # Discover all tables and their columns (any schema)
-        cur.execute("""
-            SELECT table_schema, table_name, column_name
-            FROM information_schema.columns
-            WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-            ORDER BY table_schema, table_name, ordinal_position
-        """)
-        schema_info = {}
-        for sname, tname, cname in cur.fetchall():
-            key = f"{sname}.{tname}"
-            schema_info.setdefault(key, {"schema": sname, "table": tname, "columns": []})
-            schema_info[key]["columns"].append(cname)
+        # Use mem0's internal vector store connection to query user_ids
+        projects: dict[str, int] = {}
+        debug_tables: list[str] = []
 
-        debug_tables = list(schema_info.keys())
+        try:
+            # Access mem0's internal pgvector connection
+            vs = m.vector_store
+            # mem0 pgvector uses a 'memories' table internally
+            conn = vs.client if hasattr(vs, 'client') else None
 
-        # Strategy 1: Find tables with user_id column
-        rows = []
-        for key, info in schema_info.items():
-            if "user_id" in info["columns"]:
+            if conn is None:
+                # Fallback: use psycopg2 directly
+                import psycopg2
+                conn = psycopg2.connect(
+                    host=POSTGRES_HOST,
+                    port=int(POSTGRES_PORT),
+                    dbname=POSTGRES_DB,
+                    user=POSTGRES_USER,
+                    password=POSTGRES_PASSWORD,
+                    sslmode="require",
+                )
+
+            cur = conn.cursor()
+
+            # Discover tables
+            cur.execute("""
+                SELECT table_schema || '.' || table_name
+                FROM information_schema.tables
+                WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+            """)
+            debug_tables = [row[0] for row in cur.fetchall()]
+
+            # Try known mem0 patterns for user_id storage
+            rows = []
+            for query in [
+                # Pattern 1: user_id as column
+                "SELECT user_id, COUNT(*) FROM memories WHERE user_id IS NOT NULL GROUP BY user_id ORDER BY COUNT(*) DESC",
+                # Pattern 2: mem0_v3 collection
+                "SELECT user_id, COUNT(*) FROM mem0_v3 WHERE user_id IS NOT NULL GROUP BY user_id ORDER BY COUNT(*) DESC",
+                # Pattern 3: metadata JSON
+                "SELECT metadata->>'user_id', COUNT(*) FROM mem0_v3 WHERE metadata->>'user_id' IS NOT NULL GROUP BY metadata->>'user_id' ORDER BY COUNT(*) DESC",
+                # Pattern 4: langchain_pg_embedding (pgvector default)
+                "SELECT cmetadata->>'user_id', COUNT(*) FROM langchain_pg_embedding WHERE cmetadata->>'user_id' IS NOT NULL GROUP BY cmetadata->>'user_id' ORDER BY COUNT(*) DESC",
+            ]:
                 try:
-                    cur.execute(
-                        f'SELECT user_id, COUNT(*) FROM "{info["schema"]}"."{info["table"]}" '
-                        f"WHERE user_id IS NOT NULL "
-                        f"GROUP BY user_id ORDER BY COUNT(*) DESC"
-                    )
-                    rows.extend(cur.fetchall())
+                    cur.execute(query)
+                    rows = cur.fetchall()
+                    if rows:
+                        break
                 except Exception:
                     conn.rollback()
 
-        # Strategy 2: mem0 stores user_id in metadata JSON column
-        if not rows:
-            for key, info in schema_info.items():
-                if "metadata" in info["columns"]:
-                    try:
-                        cur.execute(
-                            f"SELECT metadata->>'user_id' AS uid, COUNT(*) "
-                            f'FROM "{info["schema"]}"."{info["table"]}" '
-                            f"WHERE metadata->>'user_id' IS NOT NULL "
-                            f"GROUP BY metadata->>'user_id' ORDER BY COUNT(*) DESC"
-                        )
-                        rows.extend(cur.fetchall())
-                    except Exception:
-                        conn.rollback()
-
-        cur.close()
-        conn.close()
-
-        projects = {row[0]: row[1] for row in rows if row[0]}
+            cur.close()
+            projects = {row[0]: row[1] for row in rows if row[0]}
+        except Exception as db_err:
+            logger.warning("DB stats query failed: %s", db_err)
+            debug_tables.append(f"ERROR: {db_err}")
 
         # Graph stats (if Neo4j enabled)
         graph_stats = {}
