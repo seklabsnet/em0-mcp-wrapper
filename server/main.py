@@ -403,8 +403,15 @@ def stats(authorization: str = Header("")):
             "_debug_tables": debug_tables,
         }
     except Exception as e:
-        logger.error("stats error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("stats error: %s", e, exc_info=True)
+        return {
+            "version": "5.0.0",
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "db_host": POSTGRES_HOST,
+            "db_name": POSTGRES_DB,
+            "db_user": POSTGRES_USER,
+        }
 
 
 # ─── Conflict Detection ───
