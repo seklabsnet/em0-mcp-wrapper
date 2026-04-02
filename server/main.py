@@ -335,6 +335,7 @@ def stats(authorization: str = Header("")):
         ]
 
         projects: dict[str, int] = {}
+        errors: list[str] = []
         for uid in known_ids:
             try:
                 result = m.get_all(user_id=uid)
@@ -342,8 +343,8 @@ def stats(authorization: str = Header("")):
                 count = len(items) if isinstance(items, list) else 0
                 if count > 0:
                     projects[uid] = count
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append(f"{uid}: {type(e).__name__}: {e}")
 
         # Graph stats (if Neo4j enabled)
         graph_stats = {}
@@ -374,6 +375,7 @@ def stats(authorization: str = Header("")):
             "total_memories": sum(projects.values()),
             "projects": projects,
             "graph": graph_stats,
+            "_errors": errors if errors else None,
         }
     except Exception as e:
         logger.error("stats error: %s", e, exc_info=True)
