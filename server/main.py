@@ -337,25 +337,27 @@ def stats(authorization: str = Header("")):
         )
         cur = conn.cursor()
 
-        # Discover all public tables and their columns
+        # Discover all tables and their columns (any schema)
         cur.execute("""
-            SELECT table_name, column_name
+            SELECT table_schema, table_name, column_name
             FROM information_schema.columns
-            WHERE table_schema = 'public'
-            ORDER BY table_name, ordinal_position
+            WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY table_schema, table_name, ordinal_position
         """)
         schema_info = {}
-        for tname, cname in cur.fetchall():
-            schema_info.setdefault(tname, []).append(cname)
+        for sname, tname, cname in cur.fetchall():
+            key = f"{sname}.{tname}"
+            schema_info.setdefault(key, {"schema": sname, "table": tname, "columns": []})
+            schema_info[key]["columns"].append(cname)
 
         # Find tables that have a user_id column
         rows = []
         debug_tables = list(schema_info.keys())
-        for table, columns in schema_info.items():
-            if "user_id" in columns:
+        for key, info in schema_info.items():
+            if "user_id" in info["columns"]:
                 try:
                     cur.execute(
-                        f'SELECT user_id, COUNT(*) FROM "{table}" '
+                        f'SELECT user_id, COUNT(*) FROM "{info["schema"]}"."{info["table"]}" '
                         f"WHERE user_id IS NOT NULL "
                         f"GROUP BY user_id ORDER BY COUNT(*) DESC"
                     )
