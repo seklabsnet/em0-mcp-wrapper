@@ -1140,7 +1140,7 @@ class CompactRequest(BaseModel):
     user_id: str = ""
     dry_run: bool = True
     min_cluster_size: int = 3
-    similarity_threshold: float = 0.85
+    similarity_threshold: float = 0.40  # Jaccard word overlap (0.85 was for semantic)
 
 
 def _summarize_cluster(memories: list[dict]) -> str:
@@ -1176,10 +1176,21 @@ def _summarize_cluster(memories: list[dict]) -> str:
     return response.choices[0].message.content.strip()
 
 
+def _text_similarity(text_a: str, text_b: str) -> float:
+    """Jaccard similarity between two texts (word-level). O(1) per pair."""
+    a_words = set(text_a.lower().split())
+    b_words = set(text_b.lower().split())
+    if not a_words or not b_words:
+        return 0.0
+    intersection = len(a_words & b_words)
+    union = len(a_words | b_words)
+    return intersection / union if union > 0 else 0.0
+
+
 def _cluster_by_similarity(
     m, memories: list[dict], threshold: float,
 ) -> list[list[dict]]:
-    """Group memories into clusters by semantic similarity."""
+    """Group memories into clusters by text similarity. O(n²) but no API calls."""
     used = set()
     clusters = []
 
@@ -1188,32 +1199,16 @@ def _cluster_by_similarity(
             continue
         cluster = [mem_a]
         used.add(i)
+        text_a = mem_a.get("memory", "")
 
         for j, mem_b in enumerate(memories):
             if j in used:
                 continue
-            # Use semantic search to check similarity
-            try:
-                results = m.search(
-                    query=mem_b.get("memory", ""),
-                    user_id=mem_a.get("user_id", ""),
-                    limit=1,
-                    filters={"id": mem_a.get("id", "")},
-                )
-                # Fallback: compare via direct search score
-                items = results.get("results", []) if isinstance(results, dict) else results
-                if items and items[0].get("score", 0) >= threshold:
-                    cluster.append(mem_b)
-                    used.add(j)
-            except Exception:
-                # Fallback: simple text overlap
-                a_words = set(mem_a.get("memory", "").lower().split())
-                b_words = set(mem_b.get("memory", "").lower().split())
-                if a_words and b_words:
-                    overlap = len(a_words & b_words) / max(len(a_words | b_words), 1)
-                    if overlap >= threshold:
-                        cluster.append(mem_b)
-                        used.add(j)
+            text_b = mem_b.get("memory", "")
+            similarity = _text_similarity(text_a, text_b)
+            if similarity >= threshold:
+                cluster.append(mem_b)
+                used.add(j)
 
         clusters.append(cluster)
 
