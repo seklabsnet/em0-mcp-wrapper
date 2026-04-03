@@ -908,14 +908,34 @@ def search_cross_project(req: CrossProjectSearchRequest, authorization: str = He
                 if tgt:
                     project_entities.add(tgt.lower())
 
-        # Step 3: Search other projects for same entities
-        # Get stats to find all project IDs
-        all_memories = m.get_all()
-        other_projects = set()
-        for mem in all_memories.get("results", []):
-            uid = mem.get("user_id", "")
-            if uid and uid != current_project:
-                other_projects.add(uid)
+        # Step 3: Discover other projects from Neo4j + fallback
+        other_projects: set[str] = set()
+        try:
+            from neo4j import GraphDatabase
+            driver = GraphDatabase.driver(
+                NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
+            )
+            with driver.session() as session:
+                rows = session.run(
+                    "MATCH (n) WHERE n.user_id IS NOT NULL "
+                    "RETURN DISTINCT n.user_id AS uid"
+                ).data()
+                for row in rows:
+                    uid = row.get("uid", "")
+                    if uid and uid != current_project:
+                        other_projects.add(uid)
+            driver.close()
+        except Exception:
+            pass
+        # Fallback known IDs
+        other_projects.update({
+            uid for uid in [
+                "centauri", "happybrain", "em0-mcp-wrapper",
+                "centauri-ios", "centauri-backend",
+                "pallasite", "seklabs", "pal-cms",
+                "onboarding-survey-engine",
+            ] if uid != current_project
+        })
 
         cross_relations = []
         for other_project in other_projects:
