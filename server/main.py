@@ -1069,9 +1069,9 @@ def project_summary(project_id: str, authorization: str = Header("")):
 
         # Last updated
         timestamps = [
-            mem.get("updated_at", mem.get("created_at", ""))
-            for mem in all_items
-            if mem.get("updated_at") or mem.get("created_at")
+            ts for mem in all_items
+            for ts in [mem.get("updated_at") or mem.get("created_at")]
+            if ts is not None
         ]
         last_updated = max(timestamps) if timestamps else "unknown"
 
